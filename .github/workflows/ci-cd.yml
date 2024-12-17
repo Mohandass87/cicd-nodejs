@@ -1,0 +1,56 @@
+name: CI/CD Pipeline for NestJS
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      # Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Lint the NestJS app
+      - name: Lint the NestJS app
+        run: npm run lint
+
+      # Build the app
+      - name: Build the NestJS app
+        run: npm run build
+
+      # Set up SSH keys to deploy to EC2
+      - name: Add EC2 private key to SSH agent
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_PUBLIC_IP }} >> ~/.ssh/known_hosts
+
+      # Deploy the app to EC2
+      - name: Deploy the app to EC2
+        run: |
+          scp -o StrictHostKeyChecking=no -r ./dist devops@${{ secrets.EC2_PUBLIC_IP }}:/home/devops/nestjs-app
+          scp -o StrictHostKeyChecking=no ./package.json devops@${{ secrets.EC2_PUBLIC_IP }}:/home/devops/nestjs-app
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa devops@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            cd /home/devops/nestjs-app
+            npm install --production
+            pm2 restart app
+          EOF
+
